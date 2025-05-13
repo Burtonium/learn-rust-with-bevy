@@ -17,7 +17,7 @@ pub fn game_plugin(app: &mut App) {
     .insert_resource(Score(0))
     .insert_resource(ClearColor(BACKGROUND_COLOR))
     .insert_resource(Lives(INITIAL_LIVES))
-    .add_event::<CollisionEvent>()
+    .add_event::<GameEvent>()
     .add_systems(OnEnter(GameState::Game), game_setup)
     .add_systems(
         FixedUpdate,
@@ -25,7 +25,7 @@ pub fn game_plugin(app: &mut App) {
             apply_velocity,
             move_paddle,
             check_for_collisions,
-            play_collision_sound,
+            play_sounds,
         )
             // `chain`ing systems together runs them in order
             .chain()
@@ -103,7 +103,6 @@ struct Velocity(Vec2);
 #[derive(Resource, Deref, DerefMut)]
 struct Score(usize);
 
-
 #[derive(Resource, Deref, DerefMut)]
 struct Lives(usize);
 
@@ -112,11 +111,12 @@ struct LivesUi;
 
 #[derive(Component)]
 struct ScoreboardUi;
-
+#[derive(Event, Default)]
 // Menu
 #[derive(Component)]
 struct MenuTag;
 
+// Events
 #[derive(Event, Default)]
 struct CollisionEvent;
 
@@ -124,7 +124,15 @@ struct CollisionEvent;
 struct GameOverEvent;
 
 #[derive(Event, Default)]
-struct LostLiveEvent;
+struct LostLifeEvent;
+
+#[derive(Event)]
+enum GameEvent {
+    Collision(CollisionEvent),
+    LostLife(LostLifeEvent),
+    GameOver(GameOverEvent),
+}
+
 
 #[derive(Component)]
 struct Brick;
@@ -203,10 +211,15 @@ impl Wall {
 
 fn game_setup(
   mut commands: Commands,
+  mut lives: ResMut<Lives>,
+  mut score: ResMut<Score>,
   mut meshes: ResMut<Assets<Mesh>>,
   mut materials: ResMut<Assets<ColorMaterial>>,
   asset_server: Res<AssetServer>,
 ) {
+  **lives = INITIAL_LIVES;
+  **score = 0;
+
   // Sound
   let ball_collision_sound = asset_server.load("sounds/breakout_collision.ogg");
   commands.insert_resource(CollisionSound(ball_collision_sound));
@@ -223,6 +236,7 @@ fn game_setup(
       },
       Paddle,
       Collider,
+      OnGameScreen
   ));
 
   // Ball
@@ -233,6 +247,7 @@ fn game_setup(
           .with_scale(Vec2::splat(BALL_DIAMETER).extend(1.)),
       Ball,
       Velocity(INITIAL_BALL_DIRECTION.normalize() * BALL_SPEED),
+      OnGameScreen
   ));
 
   // Scoreboard
@@ -258,6 +273,7 @@ fn game_setup(
           },
           TextColor(SCORE_COLOR),
       )],
+      OnGameScreen
   ));
 
   // Lives
@@ -283,13 +299,14 @@ fn game_setup(
           },
           TextColor(LIVES_COLOR),
       )],
+      OnGameScreen
   ));
 
   // Walls
-  commands.spawn(Wall::new(WallLocation::Left));
-  commands.spawn(Wall::new(WallLocation::Right));
-  commands.spawn((Wall::new(WallLocation::Bottom), Deadly));
-  commands.spawn(Wall::new(WallLocation::Top));
+  commands.spawn((Wall::new(WallLocation::Left), OnGameScreen));
+  commands.spawn((Wall::new(WallLocation::Right), OnGameScreen));
+  commands.spawn((Wall::new(WallLocation::Bottom), Deadly, OnGameScreen));
+  commands.spawn((Wall::new(WallLocation::Top), OnGameScreen));
 
   // Bricks
   let total_width_of_bricks = (RIGHT_WALL - LEFT_WALL) - 2. * GAP_BETWEEN_BRICKS_AND_SIDES;
@@ -338,6 +355,7 @@ fn game_setup(
               },
               Brick,
               Collider,
+              OnGameScreen
           ));
       }
   }
@@ -376,19 +394,28 @@ fn ball_collision(ball: BoundingCircle, bounding_box: Aabb2d) -> Option<Collisio
     Some(side)
 }
 
-fn play_collision_sound(
+fn play_sounds(
   mut commands: Commands,
-  mut collision_events: EventReader<CollisionEvent>,
+  mut events: EventReader<GameEvent>,
   sound: Res<CollisionSound>,
 ) {
-  // Play a sound once per frame if a collision occurred.
-  if !collision_events.is_empty() {
-      // This prevents events staying active on the next frame.
-      collision_events.clear();
-      commands.spawn((AudioPlayer(sound.clone()), PlaybackSettings::DESPAWN));
+  if !events.is_empty() {
+    // Play sounds for each relevant event
+    for event in events.read() {
+        match event {
+            GameEvent::Collision(_) => {
+                commands.spawn((AudioPlayer(sound.clone()), PlaybackSettings::DESPAWN));
+            }
+            GameEvent::LostLife(_) => {
+                info!("Lost Life");
+            }
+            GameEvent::GameOver(_) => {
+                info!("Game Over");
+            }
+        }
+    }
   }
 }
-
 
 fn move_paddle(
   keyboard_input: Res<ButtonInput<KeyCode>>,
@@ -426,11 +453,11 @@ fn apply_velocity(mut query: Query<(&mut Transform, &Velocity)>, time: Res<Time>
 
 fn check_for_collisions(
   mut commands: Commands,
+  mut events: EventWriter<GameEvent>,
   mut score: ResMut<Score>,
   mut lives: ResMut<Lives>,
   ball_query: Single<(&mut Velocity, &mut Transform), With<Ball>>,
   collider_query: Query<(Entity, &Transform, Option<&Brick>, Option<&Deadly>), (With<Collider>, Without<Ball>)>,
-  mut collision_events: EventWriter<CollisionEvent>,
 ) {
   let (mut ball_velocity, mut ball_transform) = ball_query.into_inner();
 
@@ -445,7 +472,7 @@ fn check_for_collisions(
 
       if let Some(collision) = collision {
           // Writes a collision event so that other systems can react to the collision
-          collision_events.write_default();
+          events.write(GameEvent::Collision(CollisionEvent));
 
           // Bricks should be despawned and increment the scoreboard on collision
           if maybe_brick.is_some() {
@@ -454,10 +481,17 @@ fn check_for_collisions(
           }
 
           if maybe_deadly.is_some() {
-              ball_transform.translation = BALL_STARTING_POSITION;
-              ball_velocity.0 = INITIAL_BALL_DIRECTION.normalize() * BALL_SPEED;
-
-              **lives -= 1;   
+              if **lives == 0 {
+                  events.write(GameEvent::GameOver(GameOverEvent));
+                  commands.set_state(GameState::GameOver);
+                  return;
+              } else {
+                ball_transform.translation = BALL_STARTING_POSITION;
+                ball_velocity.0 = INITIAL_BALL_DIRECTION.normalize() * BALL_SPEED;
+  
+                **lives -= 1;
+                events.write(GameEvent::LostLife(LostLifeEvent)) ;
+              }
           }
 
           // Reflect the ball's velocity when it collides

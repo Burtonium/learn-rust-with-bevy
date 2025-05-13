@@ -168,10 +168,6 @@ fn main_menu_setup(mut commands: Commands, asset_server: Res<AssetServer>) {
         ..default()
     };
 
-    let right_icon = asset_server.load("textures/Game Icons/right.png");
-    let wrench_icon = asset_server.load("textures/Game Icons/wrench.png");
-    let exit_icon = asset_server.load("textures/Game Icons/exitRight.png");
-
     commands.spawn((
         Node {
             width: Val::Percent(100.0),
@@ -189,7 +185,6 @@ fn main_menu_setup(mut commands: Commands, asset_server: Res<AssetServer>) {
             },
             BackgroundColor(CRIMSON.into()),
             children![
-                // Display the game name
                 (
                     Text::new("Game Menu"),
                     TextFont {
@@ -202,17 +197,12 @@ fn main_menu_setup(mut commands: Commands, asset_server: Res<AssetServer>) {
                         ..default()
                     },
                 ),
-                // Display three buttons for each action available from the main menu:
-                // - new game
-                // - settings
-                // - quit
                 (
                     Button,
                     button_node.clone(),
                     BackgroundColor(NORMAL_BUTTON),
                     MenuButtonAction::Play,
                     children![
-                        (ImageNode::new(right_icon), button_icon_node.clone()),
                         (
                             Text::new("New Game"),
                             button_text_font.clone(),
@@ -226,7 +216,6 @@ fn main_menu_setup(mut commands: Commands, asset_server: Res<AssetServer>) {
                     BackgroundColor(NORMAL_BUTTON),
                     MenuButtonAction::Settings,
                     children![
-                        (ImageNode::new(wrench_icon), button_icon_node.clone()),
                         (
                             Text::new("Settings"),
                             button_text_font.clone(),
@@ -240,7 +229,6 @@ fn main_menu_setup(mut commands: Commands, asset_server: Res<AssetServer>) {
                     BackgroundColor(NORMAL_BUTTON),
                     MenuButtonAction::Quit,
                     children![
-                        (ImageNode::new(exit_icon), button_icon_node),
                         (Text::new("Quit"), button_text_font, TextColor(TEXT_COLOR),),
                     ]
                 ),

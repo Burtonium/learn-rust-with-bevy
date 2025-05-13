@@ -9,7 +9,7 @@ use bevy::{
     prelude::*,
 };
 
-use screens::{game, menu};
+use screens::{game, menu, gameover};
 
 const TEXT_COLOR: Color = Color::srgb(0.5, 0.5, 1.0);
 
@@ -41,7 +41,7 @@ fn main() {
         .init_state::<GameState>()
         .add_systems(Startup, setup)
         .add_plugins(
-            (menu::menu_plugin, game::game_plugin)
+            (menu::menu_plugin, game::game_plugin, gameover::gameover_plugin)
         )
         .run();
 }
