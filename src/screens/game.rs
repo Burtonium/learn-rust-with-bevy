@@ -4,37 +4,53 @@ use bevy::{
 };
 
 use crate::stepping;
-use crate::{GameState, TEXT_COLOR, despawn_screen};
+use crate::{AppState, TEXT_COLOR, despawn_screen};
+
+// State used for the current menu screen
+#[derive(Clone, Copy, Default, Eq, PartialEq, Debug, Hash, States)]
+enum GameState {
+    #[default]
+    Disabled,
+    Starting,
+    Playing,
+}
 
 pub fn game_plugin(app: &mut App) {
-    app.add_plugins(
-        stepping::SteppingPlugin::default()
-            .add_schedule(Update)
-            .add_schedule(FixedUpdate)
-            .at(Val::Percent(35.0), Val::Percent(50.0)),
-    )
-    .insert_resource(Score(0))
-    .insert_resource(ClearColor(BACKGROUND_COLOR))
-    .insert_resource(Lives(INITIAL_LIVES))
-    .add_event::<GameEvent>()
-    .add_systems(OnEnter(GameState::Game), game_setup)
-    .add_systems(
-        FixedUpdate,
-        (
-            apply_velocity,
-            move_paddle,
-            check_for_collisions,
-            play_sounds,
+    app.init_state::<GameState>()
+        .add_plugins(
+            stepping::SteppingPlugin::default()
+                .add_schedule(Update)
+                .add_schedule(FixedUpdate)
+                .at(Val::Percent(35.0), Val::Percent(50.0)),
         )
-            // `chain`ing systems together runs them in order
-            .chain()
-            .run_if(in_state(GameState::Game)),
-    )
-    .add_systems(
-        Update,
-        (update_scoreboard, update_lives).run_if(in_state(GameState::Game)),
-    )
-    .add_systems(OnExit(GameState::Game), despawn_screen::<OnGameScreen>);
+        .insert_resource(Score(0))
+        .insert_resource(ClearColor(BACKGROUND_COLOR))
+        .insert_resource(Lives(INITIAL_LIVES))
+        .add_event::<GameEvent>()
+        .add_systems(OnEnter(GameState::Starting), countdown_setup)
+        .add_systems(OnEnter(AppState::Game), game_setup)
+        .add_systems(
+            FixedUpdate,
+            (
+                apply_velocity,
+                move_paddle,
+                check_for_collisions,
+                play_sounds,
+            )
+                // `chain`ing systems together runs them in order
+                .chain()
+                .run_if(in_state(AppState::Game))
+                .run_if(in_state(GameState::Playing)),
+        )
+        .add_systems(
+            Update,
+            (update_scoreboard, update_lives).run_if(in_state(AppState::Game)),
+        )
+        .add_systems(OnExit(AppState::Game), despawn_screen::<OnGameScreen>)
+        .add_systems(
+            Update,
+            update_countdown.run_if(|state: Res<State<GameState>>| *state != GameState::Disabled),
+        );
 }
 
 // These constants are defined in `Transform` units.
@@ -81,9 +97,18 @@ const WALL_COLOR: Color = Color::srgb(0.8, 0.8, 0.8);
 const SCORE_COLOR: Color = Color::srgb(1.0, 0.5, 0.5);
 const LIVES_COLOR: Color = Color::srgb(0.6, 0.8, 0.5);
 
-// Tag component used to tag entities added on the game screen
+const STARTING_GAME_DURATION_SECS: f32 = 3.0;
+const GO_DISPLAY_DURATION_SECS: f32 = 1.0;
+
+// Tag components
 #[derive(Component)]
 struct OnGameScreen;
+
+#[derive(Component)]
+struct OnStartingScreen;
+
+#[derive(Resource, Deref, DerefMut)]
+struct CountdownTimer(Timer);
 
 #[derive(Component)]
 struct Paddle;
@@ -356,6 +381,41 @@ fn game_setup(
             ));
         }
     }
+
+    commands.set_state(GameState::Starting);
+}
+
+#[derive(Component)]
+struct CountdownUI;
+
+fn countdown_setup(mut commands: Commands) {
+    commands.insert_resource(CountdownTimer(Timer::from_seconds(
+        STARTING_GAME_DURATION_SECS + GO_DISPLAY_DURATION_SECS,
+        TimerMode::Once,
+    )));
+
+    commands.spawn((
+        Node {
+            width: Val::Percent(100.0),
+            height: Val::Percent(100.0),
+            align_items: AlignItems::Center,
+            justify_content: JustifyContent::Center,
+            ..default()
+        },
+        BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.5)),
+        OnStartingScreen,
+        OnGameScreen,
+        children![(
+            Text::new(STARTING_GAME_DURATION_SECS.to_string()),
+            TextFont {
+                font_size: 120.0,
+                ..default()
+            },
+            CountdownUI,
+            OnStartingScreen,
+            TextColor(TEXT_COLOR)
+        )],
+    ));
 }
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
@@ -477,12 +537,22 @@ fn check_for_collisions(
             if maybe_brick.is_some() {
                 commands.entity(collider_entity).despawn();
                 **score += 1;
+
+                let remaining_bricks = collider_query
+                    .iter()
+                    .filter(|(_, _, maybe_brick, _)| maybe_brick.is_some())
+                    .count();
+
+                if remaining_bricks == 0 {
+                    commands.set_state(AppState::Win);
+                    return;
+                }
             }
 
             if maybe_deadly.is_some() {
                 if **lives == 0 {
                     events.write(GameEvent::GameOver(GameOverEvent));
-                    commands.set_state(GameState::GameOver);
+                    commands.set_state(AppState::GameOver);
                     return;
                 } else {
                     ball_transform.translation = BALL_STARTING_POSITION;
@@ -533,4 +603,37 @@ fn update_lives(
     mut writer: TextUiWriter,
 ) {
     *writer.text(*lives_root, 1) = lives.to_string();
+}
+
+fn update_countdown(
+    time: Res<Time>,
+    countdown: Option<ResMut<CountdownTimer>>,
+    mut commands: Commands,
+    countdown_root: Single<Entity, With<CountdownUI>>,
+    mut writer: TextUiWriter,
+    starting_entities: Query<Entity, With<OnStartingScreen>>,
+) {
+    if let Some(mut countdown) = countdown {
+        if countdown.just_finished() {
+            despawn_screen::<OnStartingScreen>(starting_entities, commands);
+            return;
+        }
+
+        if countdown.tick(time.delta()).elapsed_secs() >= STARTING_GAME_DURATION_SECS {
+            commands.set_state(GameState::Playing);
+        }
+
+        let secs = (countdown.remaining_secs() - GO_DISPLAY_DURATION_SECS).ceil();
+        *writer.text(*countdown_root, 0) = if secs == 0. {
+            "GO!".to_string()
+        } else {
+            secs.to_string()
+        };
+
+        // Interpolate background color based on countdown remaining time
+        let progress = 1.0
+            - (countdown.remaining_secs() - STARTING_GAME_DURATION_SECS) / GO_DISPLAY_DURATION_SECS;
+
+        // do dimming here somehow
+    }
 }

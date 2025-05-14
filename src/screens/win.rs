@@ -2,15 +2,12 @@ use crate::{AppState, TEXT_COLOR, despawn_screen};
 use bevy::prelude::*;
 
 #[derive(Component)]
-struct OnGameOverScreen;
+struct OnWinScreen;
 
 // Plugin definition
-pub fn gameover_plugin(app: &mut App) {
+pub fn win_plugin(app: &mut App) {
     app.add_systems(OnEnter(AppState::GameOver), setup_gameover_screen)
-        .add_systems(
-            OnExit(AppState::GameOver),
-            despawn_screen::<OnGameOverScreen>,
-        )
+        .add_systems(OnExit(AppState::GameOver), despawn_screen::<OnWinScreen>)
         .add_systems(
             Update,
             process_commands.run_if(in_state(AppState::GameOver)),
@@ -26,7 +23,7 @@ fn setup_gameover_screen(mut commands: Commands) {
             justify_content: JustifyContent::Center,
             ..default()
         },
-        OnGameOverScreen,
+        OnWinScreen,
         BackgroundColor(Color::BLACK),
         children![(
             Node {
@@ -36,7 +33,7 @@ fn setup_gameover_screen(mut commands: Commands) {
             },
             children![
                 (
-                    Text::new("Game Over!"),
+                    Text::new("You win!"),
                     TextFont {
                         font_size: 67.0,
                         ..default()

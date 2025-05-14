@@ -7,7 +7,7 @@ mod stepping;
 
 use bevy::prelude::*;
 
-use screens::{game, gameover, menu};
+use screens::{game, gameover, menu, win};
 
 const TEXT_COLOR: Color = Color::srgb(0.5, 0.5, 1.0);
 
@@ -24,11 +24,12 @@ enum DisplayQuality {
 struct Volume(u32);
 
 #[derive(States, Debug, Clone, Eq, PartialEq, Hash, Default)]
-enum GameState {
+enum AppState {
     #[default]
     Menu,
     Game,
     GameOver,
+    Win,
 }
 
 fn main() {
@@ -36,12 +37,13 @@ fn main() {
         .add_plugins(DefaultPlugins)
         .insert_resource(DisplayQuality::Medium)
         .insert_resource(Volume(7))
-        .init_state::<GameState>()
+        .init_state::<AppState>()
         .add_systems(Startup, setup)
         .add_plugins((
             menu::menu_plugin,
             game::game_plugin,
             gameover::gameover_plugin,
+            win::win_plugin,
         ))
         .run();
 }
