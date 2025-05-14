@@ -5,7 +5,7 @@ use bevy::{
     prelude::*,
 };
 
-use crate::{despawn_screen, DisplayQuality, GameState, Volume, TEXT_COLOR};
+use crate::{DisplayQuality, GameState, TEXT_COLOR, Volume, despawn_screen};
 
 // This plugin manages the menu, with 5 different screens:
 // - a main menu with "New Game", "Settings", "Quit"
@@ -145,7 +145,7 @@ fn menu_setup(mut menu_state: ResMut<NextState<MenuState>>) {
     menu_state.set(MenuState::Main);
 }
 
-fn main_menu_setup(mut commands: Commands, asset_server: Res<AssetServer>) {
+fn main_menu_setup(mut commands: Commands) {
     // Common style for all buttons on the screen
     let button_node = Node {
         width: Val::Px(300.0),
@@ -155,14 +155,7 @@ fn main_menu_setup(mut commands: Commands, asset_server: Res<AssetServer>) {
         align_items: AlignItems::Center,
         ..default()
     };
-    let button_icon_node = Node {
-        width: Val::Px(30.0),
-        // This takes the icons out of the flexbox flow, to be positioned exactly
-        position_type: PositionType::Absolute,
-        // The icon will be close to the left border of the button
-        left: Val::Px(10.0),
-        ..default()
-    };
+
     let button_text_font = TextFont {
         font_size: 33.0,
         ..default()
@@ -202,35 +195,29 @@ fn main_menu_setup(mut commands: Commands, asset_server: Res<AssetServer>) {
                     button_node.clone(),
                     BackgroundColor(NORMAL_BUTTON),
                     MenuButtonAction::Play,
-                    children![
-                        (
-                            Text::new("New Game"),
-                            button_text_font.clone(),
-                            TextColor(TEXT_COLOR),
-                        ),
-                    ]
+                    children![(
+                        Text::new("New Game"),
+                        button_text_font.clone(),
+                        TextColor(TEXT_COLOR),
+                    ),]
                 ),
                 (
                     Button,
                     button_node.clone(),
                     BackgroundColor(NORMAL_BUTTON),
                     MenuButtonAction::Settings,
-                    children![
-                        (
-                            Text::new("Settings"),
-                            button_text_font.clone(),
-                            TextColor(TEXT_COLOR),
-                        ),
-                    ]
+                    children![(
+                        Text::new("Settings"),
+                        button_text_font.clone(),
+                        TextColor(TEXT_COLOR),
+                    ),]
                 ),
                 (
                     Button,
                     button_node,
                     BackgroundColor(NORMAL_BUTTON),
                     MenuButtonAction::Quit,
-                    children![
-                        (Text::new("Quit"), button_text_font, TextColor(TEXT_COLOR),),
-                    ]
+                    children![(Text::new("Quit"), button_text_font, TextColor(TEXT_COLOR),),]
                 ),
             ]
         )],

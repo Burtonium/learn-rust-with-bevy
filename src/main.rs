@@ -2,14 +2,12 @@
 //!
 //! Demonstrates Bevy's stepping capabilities if compiled with the `bevy_debug_stepping` feature.
 
-mod stepping;
 mod screens;
+mod stepping;
 
-use bevy::{
-    prelude::*,
-};
+use bevy::prelude::*;
 
-use screens::{game, menu, gameover};
+use screens::{game, gameover, menu};
 
 const TEXT_COLOR: Color = Color::srgb(0.5, 0.5, 1.0);
 
@@ -40,9 +38,11 @@ fn main() {
         .insert_resource(Volume(7))
         .init_state::<GameState>()
         .add_systems(Startup, setup)
-        .add_plugins(
-            (menu::menu_plugin, game::game_plugin, gameover::gameover_plugin)
-        )
+        .add_plugins((
+            menu::menu_plugin,
+            game::game_plugin,
+            gameover::gameover_plugin,
+        ))
         .run();
 }
 

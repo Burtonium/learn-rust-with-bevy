@@ -1,3 +1,3 @@
 pub mod game;
-pub mod menu;
 pub mod gameover;
+pub mod menu;
