@@ -1,12 +1,12 @@
 use bevy::{
     app::AppExit,
-    color::palettes::css::CRIMSON,
     ecs::spawn::{SpawnIter, SpawnWith},
     prelude::*,
 };
 
-use crate::{AppState, DisplayQuality, TEXT_COLOR, Volume, despawn_screen};
+use crate::palette::{BLUE, CORAL, DARK, DARKER};
 
+use crate::{AppState, Volume, despawn_screen};
 // This plugin manages the menu, with 5 different screens:
 // - a main menu with "New Game", "Settings", "Quit"
 // - a settings menu with two submenus and a back button
@@ -28,18 +28,6 @@ pub fn menu_plugin(app: &mut App) {
             despawn_screen::<OnSettingsMenuScreen>,
         )
         // Systems to handle the display settings screen
-        .add_systems(
-            OnEnter(MenuState::SettingsDisplay),
-            display_settings_menu_setup,
-        )
-        .add_systems(
-            Update,
-            (setting_button::<DisplayQuality>.run_if(in_state(MenuState::SettingsDisplay)),),
-        )
-        .add_systems(
-            OnExit(MenuState::SettingsDisplay),
-            despawn_screen::<OnDisplaySettingsMenuScreen>,
-        )
         // Systems to handle the sound settings screen
         .add_systems(OnEnter(MenuState::SettingsSound), sound_settings_menu_setup)
         .add_systems(
@@ -62,7 +50,6 @@ pub fn menu_plugin(app: &mut App) {
 enum MenuState {
     Main,
     Settings,
-    SettingsDisplay,
     SettingsSound,
     #[default]
     Disabled,
@@ -84,11 +71,6 @@ struct OnDisplaySettingsMenuScreen;
 #[derive(Component)]
 struct OnSoundSettingsMenuScreen;
 
-const NORMAL_BUTTON: Color = Color::srgb(0.15, 0.15, 0.15);
-const HOVERED_BUTTON: Color = Color::srgb(0.25, 0.25, 0.25);
-const HOVERED_PRESSED_BUTTON: Color = Color::srgb(0.25, 0.65, 0.25);
-const PRESSED_BUTTON: Color = Color::srgb(0.35, 0.75, 0.35);
-
 // Tag component used to mark which setting is currently selected
 #[derive(Component)]
 struct SelectedOption;
@@ -98,26 +80,30 @@ struct SelectedOption;
 enum MenuButtonAction {
     Play,
     Settings,
-    SettingsDisplay,
     SettingsSound,
     BackToMainMenu,
     BackToSettings,
     Quit,
 }
 
-// This system handles changing all buttons color based on mouse interaction
 fn button_system(
     mut interaction_query: Query<
-        (&Interaction, &mut BackgroundColor, Option<&SelectedOption>),
+        (&Interaction, &Children, Option<&SelectedOption>),
         (Changed<Interaction>, With<Button>),
     >,
+    mut text_query: Query<&mut TextColor, With<Text>>,
 ) {
-    for (interaction, mut background_color, selected) in &mut interaction_query {
-        *background_color = match (*interaction, selected) {
-            (Interaction::Pressed, _) | (Interaction::None, Some(_)) => PRESSED_BUTTON.into(),
-            (Interaction::Hovered, Some(_)) => HOVERED_PRESSED_BUTTON.into(),
-            (Interaction::Hovered, None) => HOVERED_BUTTON.into(),
-            (Interaction::None, None) => NORMAL_BUTTON.into(),
+    for (interaction, children, selected) in &mut interaction_query {
+        for child in children.iter() {
+            let maybe_child = text_query.get_mut(child); // Removed dereference operator (*)
+            if let Ok(mut color) = maybe_child {
+                *color = match (*interaction, selected) {
+                    (Interaction::Pressed, _) | (Interaction::None, Some(_)) => BLUE.into(),
+                    (Interaction::Hovered, Some(_)) => BLUE.into(),
+                    (Interaction::Hovered, None) => BLUE.into(),
+                    (Interaction::None, None) => DARK.into(),
+                }
+            }
         }
     }
 }
@@ -125,18 +111,33 @@ fn button_system(
 // This system updates the settings when a new value for a setting is selected, and marks
 // the button as the one currently selected
 fn setting_button<T: Resource + Component + PartialEq + Copy>(
-    interaction_query: Query<(&Interaction, &T, Entity), (Changed<Interaction>, With<Button>)>,
-    selected_query: Single<(Entity, &mut BackgroundColor), With<SelectedOption>>,
+    mut interaction_query: Query<(&Interaction, &T, Entity), (Changed<Interaction>, With<Button>)>,
+    selected_query: Single<Entity, With<SelectedOption>>,
+    mut bg_colors: Query<&mut BackgroundColor, With<Button>>,
     mut commands: Commands,
     mut setting: ResMut<T>,
 ) {
-    let (previous_button, mut previous_button_color) = selected_query.into_inner();
-    for (interaction, button_setting, entity) in &interaction_query {
-        if *interaction == Interaction::Pressed && *setting != *button_setting {
-            *previous_button_color = NORMAL_BUTTON.into();
-            commands.entity(previous_button).remove::<SelectedOption>();
-            commands.entity(entity).insert(SelectedOption);
-            *setting = *button_setting;
+    let previously_selected_button = selected_query.into_inner();
+    for (interaction, button_setting, current_interacted_button) in interaction_query.iter_mut() {
+        match *interaction {
+            Interaction::Pressed if *setting != *button_setting => {
+                bg_colors.get_mut(previously_selected_button).unwrap().0 = DARKER;
+                bg_colors.get_mut(current_interacted_button).unwrap().0 = CORAL;
+                commands
+                    .entity(previously_selected_button)
+                    .remove::<SelectedOption>();
+                commands
+                    .entity(current_interacted_button)
+                    .insert(SelectedOption);
+                *setting = *button_setting;
+            }
+            Interaction::Hovered if *setting != *button_setting => {
+                bg_colors.get_mut(current_interacted_button).unwrap().0 = BLUE;
+            }
+            Interaction::None if *setting != *button_setting => {
+                bg_colors.get_mut(current_interacted_button).unwrap().0 = DARKER;
+            }
+            _ => {}
         }
     }
 }
@@ -145,12 +146,11 @@ fn menu_setup(mut menu_state: ResMut<NextState<MenuState>>) {
     menu_state.set(MenuState::Main);
 }
 
-fn main_menu_setup(mut commands: Commands) {
-    // Common style for all buttons on the screen
+fn main_menu_setup(mut commands: Commands, assets: Res<AssetServer>) {
     let button_node = Node {
         width: Val::Px(300.0),
         height: Val::Px(65.0),
-        margin: UiRect::all(Val::Px(20.0)),
+        margin: UiRect::all(Val::Px(0.0)),
         justify_content: JustifyContent::Center,
         align_items: AlignItems::Center,
         ..default()
@@ -158,73 +158,67 @@ fn main_menu_setup(mut commands: Commands) {
 
     let button_text_font = TextFont {
         font_size: 33.0,
+        font: assets.load("fonts/PressStart2P-Regular.ttf"),
         ..default()
     };
+
+    let bg = assets.load("images/title.png");
 
     commands.spawn((
         Node {
             width: Val::Percent(100.0),
             height: Val::Percent(100.0),
-            align_items: AlignItems::Center,
-            justify_content: JustifyContent::Center,
+            align_items: AlignItems::FlexEnd,
+            justify_content: JustifyContent::FlexEnd,
             ..default()
         },
+        ImageNode::new(bg),
         OnMainMenuScreen,
         children![(
             Node {
                 flex_direction: FlexDirection::Column,
                 align_items: AlignItems::Center,
+                margin: UiRect {
+                    left: Val::Percent(0.0),
+                    right: Val::Percent(19.5),
+                    top: Val::Percent(0.0),
+                    bottom: Val::Percent(10.0),
+                },
                 ..default()
             },
-            BackgroundColor(CRIMSON.into()),
             children![
-                (
-                    Text::new("Game Menu"),
-                    TextFont {
-                        font_size: 67.0,
-                        ..default()
-                    },
-                    TextColor(TEXT_COLOR),
-                    Node {
-                        margin: UiRect::all(Val::Px(50.0)),
-                        ..default()
-                    },
-                ),
                 (
                     Button,
                     button_node.clone(),
-                    BackgroundColor(NORMAL_BUTTON),
                     MenuButtonAction::Play,
                     children![(
                         Text::new("New Game"),
                         button_text_font.clone(),
-                        TextColor(TEXT_COLOR),
-                    ),]
+                        TextColor(DARKER),
+                    )]
                 ),
                 (
                     Button,
                     button_node.clone(),
-                    BackgroundColor(NORMAL_BUTTON),
                     MenuButtonAction::Settings,
                     children![(
                         Text::new("Settings"),
                         button_text_font.clone(),
-                        TextColor(TEXT_COLOR),
+                        TextColor(DARKER),
                     ),]
                 ),
                 (
                     Button,
                     button_node,
-                    BackgroundColor(NORMAL_BUTTON),
                     MenuButtonAction::Quit,
-                    children![(Text::new("Quit"), button_text_font, TextColor(TEXT_COLOR),),]
+                    children![(Text::new("Quit"), button_text_font, TextColor(DARKER),),]
                 ),
             ]
         )],
     ));
 }
 
-fn settings_menu_setup(mut commands: Commands) {
+fn settings_menu_setup(mut commands: Commands, assets: Res<AssetServer>) {
     let button_node = Node {
         width: Val::Px(200.0),
         height: Val::Px(65.0),
@@ -237,9 +231,10 @@ fn settings_menu_setup(mut commands: Commands) {
     let button_text_style = (
         TextFont {
             font_size: 33.0,
+            font: assets.load("fonts/PressStart2P-Regular.ttf"),
             ..default()
         },
-        TextColor(TEXT_COLOR),
+        TextColor(DARKER),
     );
 
     commands.spawn((
@@ -257,10 +252,8 @@ fn settings_menu_setup(mut commands: Commands) {
                 align_items: AlignItems::Center,
                 ..default()
             },
-            BackgroundColor(CRIMSON.into()),
             Children::spawn(SpawnIter(
                 [
-                    (MenuButtonAction::SettingsDisplay, "Display"),
                     (MenuButtonAction::SettingsSound, "Sound"),
                     (MenuButtonAction::BackToMainMenu, "Back"),
                 ]
@@ -269,7 +262,6 @@ fn settings_menu_setup(mut commands: Commands) {
                     (
                         Button,
                         button_node.clone(),
-                        BackgroundColor(NORMAL_BUTTON),
                         action,
                         children![(Text::new(text), button_text_style.clone())],
                     )
@@ -279,96 +271,11 @@ fn settings_menu_setup(mut commands: Commands) {
     ));
 }
 
-fn display_settings_menu_setup(mut commands: Commands, display_quality: Res<DisplayQuality>) {
-    fn button_node() -> Node {
-        Node {
-            width: Val::Px(200.0),
-            height: Val::Px(65.0),
-            margin: UiRect::all(Val::Px(20.0)),
-            justify_content: JustifyContent::Center,
-            align_items: AlignItems::Center,
-            ..default()
-        }
-    }
-    fn button_text_style() -> impl Bundle {
-        (
-            TextFont {
-                font_size: 33.0,
-                ..default()
-            },
-            TextColor(TEXT_COLOR),
-        )
-    }
-
-    let display_quality = *display_quality;
-    commands.spawn((
-        Node {
-            width: Val::Percent(100.0),
-            height: Val::Percent(100.0),
-            align_items: AlignItems::Center,
-            justify_content: JustifyContent::Center,
-            ..default()
-        },
-        OnDisplaySettingsMenuScreen,
-        children![(
-            Node {
-                flex_direction: FlexDirection::Column,
-                align_items: AlignItems::Center,
-                ..default()
-            },
-            BackgroundColor(CRIMSON.into()),
-            children![
-                // Create a new `Node`, this time not setting its `flex_direction`. It will
-                // use the default value, `FlexDirection::Row`, from left to right.
-                (
-                    Node {
-                        align_items: AlignItems::Center,
-                        ..default()
-                    },
-                    BackgroundColor(CRIMSON.into()),
-                    Children::spawn((
-                        Spawn((Text::new("Display Quality"), button_text_style())),
-                        SpawnWith(move |parent: &mut ChildSpawner| {
-                            for quality_setting in [
-                                DisplayQuality::Low,
-                                DisplayQuality::Medium,
-                                DisplayQuality::High,
-                            ] {
-                                let mut entity = parent.spawn((
-                                    Button,
-                                    Node {
-                                        width: Val::Px(150.0),
-                                        height: Val::Px(65.0),
-                                        ..button_node()
-                                    },
-                                    BackgroundColor(NORMAL_BUTTON),
-                                    quality_setting,
-                                    children![(
-                                        Text::new(format!("{quality_setting:?}")),
-                                        button_text_style(),
-                                    )],
-                                ));
-                                if display_quality == quality_setting {
-                                    entity.insert(SelectedOption);
-                                }
-                            }
-                        })
-                    ))
-                ),
-                // Display the back button to return to the settings screen
-                (
-                    Button,
-                    button_node(),
-                    BackgroundColor(NORMAL_BUTTON),
-                    MenuButtonAction::BackToSettings,
-                    children![(Text::new("Back"), button_text_style())]
-                )
-            ]
-        )],
-    ));
-}
-
-fn sound_settings_menu_setup(mut commands: Commands, volume: Res<Volume>) {
+fn sound_settings_menu_setup(
+    mut commands: Commands,
+    volume: Res<Volume>,
+    assets: Res<AssetServer>,
+) {
     let button_node = Node {
         width: Val::Px(200.0),
         height: Val::Px(65.0),
@@ -380,9 +287,10 @@ fn sound_settings_menu_setup(mut commands: Commands, volume: Res<Volume>) {
     let button_text_style = (
         TextFont {
             font_size: 33.0,
+            font: assets.load("fonts/PressStart2P-Regular.ttf"),
             ..default()
         },
-        TextColor(TEXT_COLOR),
+        TextColor(DARKER),
     );
 
     let volume = *volume;
@@ -402,14 +310,12 @@ fn sound_settings_menu_setup(mut commands: Commands, volume: Res<Volume>) {
                 align_items: AlignItems::Center,
                 ..default()
             },
-            BackgroundColor(CRIMSON.into()),
             children![
                 (
                     Node {
                         align_items: AlignItems::Center,
                         ..default()
                     },
-                    BackgroundColor(CRIMSON.into()),
                     Children::spawn((
                         Spawn((Text::new("Volume"), button_text_style.clone())),
                         SpawnWith(move |parent: &mut ChildSpawner| {
@@ -421,9 +327,14 @@ fn sound_settings_menu_setup(mut commands: Commands, volume: Res<Volume>) {
                                         height: Val::Px(65.0),
                                         ..button_node_clone.clone()
                                     },
-                                    BackgroundColor(NORMAL_BUTTON),
+                                    if volume == Volume(volume_setting) {
+                                        BackgroundColor(CORAL)
+                                    } else {
+                                        BackgroundColor(DARKER)
+                                    },
                                     Volume(volume_setting),
                                 ));
+
                                 if volume == Volume(volume_setting) {
                                     entity.insert(SelectedOption);
                                 }
@@ -434,7 +345,6 @@ fn sound_settings_menu_setup(mut commands: Commands, volume: Res<Volume>) {
                 (
                     Button,
                     button_node,
-                    BackgroundColor(NORMAL_BUTTON),
                     MenuButtonAction::BackToSettings,
                     children![(Text::new("Back"), button_text_style)]
                 )
@@ -463,9 +373,6 @@ fn menu_action(
                     menu_state.set(MenuState::Disabled);
                 }
                 MenuButtonAction::Settings => menu_state.set(MenuState::Settings),
-                MenuButtonAction::SettingsDisplay => {
-                    menu_state.set(MenuState::SettingsDisplay);
-                }
                 MenuButtonAction::SettingsSound => {
                     menu_state.set(MenuState::SettingsSound);
                 }

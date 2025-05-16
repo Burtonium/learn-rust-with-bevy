@@ -629,11 +629,5 @@ fn update_countdown(
         } else {
             secs.to_string()
         };
-
-        // Interpolate background color based on countdown remaining time
-        let progress = 1.0
-            - (countdown.remaining_secs() - STARTING_GAME_DURATION_SECS) / GO_DISPLAY_DURATION_SECS;
-
-        // do dimming here somehow
     }
 }

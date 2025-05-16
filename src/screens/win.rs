@@ -56,12 +56,12 @@ fn setup_gameover_screen(mut commands: Commands) {
 }
 
 fn process_commands(keyboard_input: Res<ButtonInput<KeyCode>>, mut commands: Commands) {
-    if keyboard_input.pressed(KeyCode::Escape) {
+    if keyboard_input.just_pressed(KeyCode::Escape) {
         commands.set_state(AppState::Menu);
         return;
     }
 
-    if keyboard_input.get_pressed().len() > 0 {
+    if keyboard_input.get_just_pressed().len() > 0 {
         commands.set_state(AppState::Game);
         return;
     }
